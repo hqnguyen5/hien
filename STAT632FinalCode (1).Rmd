@@ -1,0 +1,451 @@
+---
+title: "Final project"
+author: "Pooja Singh, Hien Nguyen & Bianca Cerna"
+date: "2024-04-27"
+output: pdf_document
+---
+
+
+Loading and checking the data set
+```{r}
+
+# load the dataset 
+suppressPackageStartupMessages({
+  pacman::p_load(MASS, ggplot2, Stat2Data,fastDummies,tidyverse)
+})
+data(MetroHealth83)
+head(MetroHealth83) 
+
+# Create a mapping of city names to numerical values
+city_mapping <- setNames(1:length(unique(MetroHealth83$City)), unique(MetroHealth83$City))
+
+# Replace 'City' with numerical values based on the mapping
+MetroHealth83$City_Numeric <- as.integer(factor(MetroHealth83$City, levels = names(city_mapping)))
+MetroHealth83 <- MetroHealth83 %>% select(-City)
+
+
+# Verify the mapping
+head(MetroHealth83)
+dim(MetroHealth83)
+
+```
+Correlation matrix heat map
+
+```{r}
+# Select numeric columns for correlation analysis
+numeric_cols <- MetroHealth83 %>% select_if(is.numeric)  # Select only numeric columns
+
+# Compute the correlation matrix
+cor_matrix <- cor(numeric_cols, use = "complete.obs")  # Correlation matrix
+# Increase plot size to reduce overlapping labels
+options(repr.plot.width = 20, repr.plot.height = 20)  # Expand plot dimensions
+
+# Create a correlation heatmap with adjusted text and label sizes
+ggcorrplot::ggcorrplot(
+  cor_matrix,
+  method = "square",  # Use circles to denote correlation
+  lab = TRUE,  # Display correlation values
+  lab_size = 2,  # Increase label size for visibility
+  colors = c("blue", "white", "red"),  # Color scale for heatmap
+  outline.color = "black",  # Outline for circles
+  title = "Correlation Matrix for MetroHealth83"  # Set plot title
+) +
+  theme(
+    plot.title = element_text(size = 18, hjust = 0.5),  # Adjust title size
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20),  # Increase plot margins
+    axis.text.x = element_text(size = 8, angle = 45),  # Rotate x-axis labels
+    axis.text.y = element_text(size = 8)  # Adjust y-axis label size
+  )
+```
+  
+
+Full Linear regtetssion model
+```{r}
+# Create a linear regression model
+lm_full <- lm(NumRetired ~ ., data = MetroHealth83)
+
+# Summary of the model
+summary(lm_full)  # Provides coefficients, R-squared, and p-values
+```
+
+Intial Testing for Full Model
+```{r}
+the.data<-MetroHealth83
+# Create a boxplot for NumRetired
+boxplot(MetroHealth83$NumRetired, horizontal = TRUE, main = "Horizontal Boxplot of NumRetired")
+
+# Create a full model
+full_model <- lm(NumRetired ~ NumMDs + RateMDs + NumHospitals + NumBeds + RateBeds + NumMedicare + PctChangeMedicare + MedicareRate + SSBNum + SSBRate + SSBChange + SSINum + SSIRate + SqrtMDs, data = MetroHealth83)
+
+# Summary of the model
+summary(full_model)
+
+# Plot diagnostics
+par(mfrow=c(2,2))
+plot(full_model)
+
+# Perform stepwise regression
+step_model <- step(full_model)
+
+# Summary of the stepwise regression model
+summary(step_model)
+
+# Check AIC
+drop1(full_model, test="F")
+
+# Apply log transformation to selected variables in the stepwise regression model
+step_model_log <- lm(log(NumRetired) ~ log(NumBeds) + log(NumMedicare) + log(MedicareRate) + log(SSBNum) + log(SSBRate) +  log(SSINum), data = MetroHealth83)
+
+# Summary of the log-transformed model
+summary(step_model_log)
+
+#plot for log reduced model
+par(mfrow=c(2,2))
+plot(step_model_log)
+
+#Square Transformation
+sqmodel <- lm(sqrt(NumRetired) ~ NumBeds + NumMedicare + MedicareRate + SSBNum + SSBRate + SSINum, data = MetroHealth83)
+summary(sqmodel)
+
+#plot for Square root reduced model
+par(mfrow=c(2,2))
+plot(sqmodel)
+```
+
+
+Checking for variance inflation factor 
+
+```{r}
+# Load the necessary library for VIF
+library(car)  # 'car' package has the vif() function
+
+# Calculate the VIF for the model to check for multicollinearity
+vif_values <- car::vif(lm_full)  # Calculate VIF for each predictor
+print(vif_values)  # Display VIF values
+```
+Plotting histogram of VIF 
+```{r}
+library(car) 
+
+vif_values <- car::vif(lm_full)
+
+vif_df <- data.frame(Variable = names(vif_values), VIF = vif_values)
+
+library(ggplot2) 
+ggplot(vif_df, aes(x = Variable, y = VIF, fill = Variable)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(VIF, 2)), vjust = -0.5, size = 3) +
+  theme_minimal() +
+  labs(title = "Variance Inflation Factor (VIF) for Each Predictor",
+       x = "Predictor Variables",
+       y = "VIF Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+Summary of reduced model by eliminating predictors with greater VIF values than 30
+
+```{r}
+lm_reducedVIF<-lm(NumRetired ~ RateMDs + RateBeds  + PctChangeMedicare+ SSBChange + SSINum + SSIRate  + City_Numeric, data=MetroHealth83)
+summary(lm_reducedVIF)# choose the predictors if they have vif  less than 50
+```
+Checking for AIC
+
+```{r}
+# Calculate AIC for the full model
+aic_full <- step(lm_full)  # Lower AIC indicates a better model
+print(aic_full)
+```
+ Summary of reduced model got from considering lowest AIC value in both direction
+
+```{r}
+lm_reducedAIC <- lm(NumRetired ~ NumBeds + NumMedicare + MedicareRate + SSBNum + SSBRate + SSINum, data = MetroHealth83)  #  reduced model with smaller AIC
+summary(lm_reducedAIC)
+```
+
+ Doing Partial F-test between above two reduced model
+ 
+```{r}
+# Conduct a partial F-test to compare reduced and full models
+partial_f_test <- anova(lm_reducedAIC, lm_reducedVIF)  # Compare models with ANOVA
+print(partial_f_test)
+```
+Applying 10 fold crossvalidation for two reduced model to choose the final model
+
+```{r}
+# Load the necessary package
+suppressPackageStartupMessages({
+  pacman::p_load(caret)  # 'caret' package for cross-validation
+})
+
+# Define cross-validation
+train_control <- trainControl(method = "cv", number = 10)  # 10-fold cross-validation
+
+# Create a model using cross-validation
+lm_cv_AIC <- train(NumRetired ~ NumBeds + NumMedicare + MedicareRate + SSBNum + SSBRate + SSINum, data = MetroHealth83, method = "lm", trControl = train_control)
+
+# Output cross-validation results
+print(lm_cv_AIC)
+
+# Create a model using cross-validation
+lm_cv_VIF <- train(NumRetired ~ RateMDs + RateBeds  + PctChangeMedicare+ SSBChange + SSINum + SSIRate  + City_Numeric, data=MetroHealth83, method = "lm", trControl = train_control)
+
+# Output cross-validation results
+print(lm_cv_VIF)
+```
+
+
+Conclusion
+
+The first model with 6 predictors appears to be a better choice due to its lower RMSE, higher R-squared, and lower MAE, suggesting better accuracy and fit without overfitting. The second model's performance suggests possible overfitting, complexity, or the inclusion of less relevant predictors.
+
+
+
+Analysing correlation among final six predictors model(got from AIC) that we finalize after checking 10 fold crossvalidation for both model 
+
+```{r}
+#ScatterPlot 1
+ggplot(data = the.data, mapping = aes(x =NumBeds, y =NumRetired)) +
+  geom_point()+
+  geom_smooth()+
+  labs(title = "Scatter plot of NumBeds vs NumRetired",x = "NumBeds",y = "NumRetired")
+
+cor(the.data$NumBeds, the.data$NumRetired)
+
+#ScatterPlot 2
+ggplot(data = the.data, mapping = aes(x =NumMedicare, y =NumRetired)) +
+  geom_point()+
+  geom_smooth()+
+  labs(title = "Scatter plot of NumMedicare vs NumRetired",x = "NumMedicare",y = "NumRetired")
+
+cor(the.data$NumMedicare, the.data$NumRetired)
+
+#ScatterPlot 3
+ggplot(data = the.data, mapping = aes(x =SSBRate, y =NumRetired)) +
+  geom_point()+
+  geom_smooth()+
+  labs(title = "Scatter plot of MedicareRate vs NumRetired",x = "MedicareRate",y = "NumRetired")
+
+cor(the.data$MedicareRate, the.data$NumRetired)
+
+#ScatterPlot 4
+ggplot(data = the.data, mapping = aes(x =SSBNum, y =NumRetired)) +
+  geom_point()+
+  geom_smooth()+
+  labs(title = "Scatter plot of SSBNum vs NumRetired",x = "SSBNum",y = "NumRetired")
+
+cor(the.data$SSBNum, the.data$NumRetired)
+
+#ScatterPlot 5
+ggplot(data = the.data, mapping = aes(x =SSBRate, y =NumRetired)) +
+  geom_point()+
+  geom_smooth()+
+  labs(title = "Scatter plot of SSBRate vs NumRetired",x = "SSBRate",y = "NumRetired")
+
+cor(the.data$SSBRate, the.data$NumRetired)
+
+#ScatterPlot 6
+ggplot(data = the.data, mapping = aes(x =SSINum, y =NumRetired)) +
+  geom_point()+
+  geom_smooth()+
+  labs(title = "Scatter plot of SSINum vs NumRetired",x = "SSINum",y = "NumRetired")
+
+cor(the.data$SSINum, the.data$NumRetired)
+```
+
+
+Final Testing of of the four final predictors
+```{r}
+#Three and more variables of Two dimensional plot
+library(car)
+scatterplotMatrix(formula = ~ NumRetired + NumBeds + NumMedicare + SSBNum + SSINum, data = MetroHealth83, smooth = TRUE, diagonal = "histogram")
+
+ggplot(MetroHealth83, aes(NumBeds, NumRetired, color = as.factor(NumBeds))) +
+  geom_point() +
+  labs(title = "NumRetired vs NumBeds",
+       x = "Number of Beds",
+       y = "Number of Retired Individuals")
+
+ggplot(MetroHealth83, aes(NumMedicare, NumRetired, color = as.factor(NumMedicare))) +
+  geom_point() +
+  labs(title = "NumRetired vs NumMedicare",
+       x = "Number of Medicare",
+       y = "Number of Retired Individuals")
+
+ggplot(MetroHealth83, aes(SSBNum, NumRetired, color = as.factor(SSBNum))) +
+  geom_point() +
+  labs(title = "NumRetired vs SSBNum",
+       x = "Number of Beds",
+       y = "Number of Retired Individuals")
+
+ggplot(MetroHealth83, aes(SSINum, NumRetired, color = as.factor(SSINum))) +
+  geom_point() +
+  labs(title = "NumRetired vs SSINum",
+       x = "Number of Beds",
+       y = "Number of Retired Individuals")
+```
+Checking for further valid predictors(as suggested by Prof.)
+```{r}
+final_model <- lm(NumRetired ~ NumBeds + NumMedicare + SSBNum + SSINum, data = MetroHealth83)
+step(final_model)
+```
+
+Scatter plot for final three predictors
+```{r}
+#scatter plot for reduced model through AIC
+# Load necessary libraries
+library(tidyverse)  # Data manipulation and visualization
+library(GGally)  # For creating scatterplot matrices
+
+# Create a scatterplot matrix for hospital capacity predictors
+scatterplot_matrix <- GGally::ggpairs(
+  MetroHealth83 %>% select(NumRetired,NumBeds,NumMedicare,SSINum),  # Select relevant predictors
+  upper = list(continuous = "cor"),  # Show correlations in the upper triangle
+  lower = list(continuous = "points"),  # Use scatter plots in the lower triangle
+  diag = list(continuous = "density"),  # Density plots on the diagonal
+  title = "Scatterplot Matrix for Social Security and Retirement Predictors"  # Apply the new title
+) +
+  theme(
+    plot.title = element_text(size = 18, hjust = 0.5),  # Adjust title size and position
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),  # Rotate x-axis labels
+    axis.text.y = element_text(size = 10),  # Adjust y-axis labels
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20)  # Increase plot margins
+  )
+
+print(scatterplot_matrix)
+```
+
+Histogram of final model predictors 
+```{r}
+# Load necessary libraries
+library(tidyverse)  # Data manipulation and visualization
+library(patchwork)  # For combining multiple plots
+# Define the histograms
+
+
+plot1 <- ggplot(MetroHealth83, aes(x = NumBeds)) +
+  geom_histogram(bins = 10, fill = "orange", color = "black") +
+  labs(
+    title = "Distribution of no. of Hospital Beds",
+    x = "No. of Hospital Beds",
+    y = "Frequency"
+  ) +
+  theme(
+    plot.title = element_text(size = 8, hjust = 0.5),  # Adjust title size and position
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 9),  # Adjust x-axis label size
+    axis.title.y = element_text(size = 9),
+    plot.margin = margin(t = 20, r = 30, b = 30, l = 30)  # Increase plot margins
+  )
+plot2 <- ggplot(MetroHealth83, aes(x = NumMedicare)) +
+  geom_histogram(bins = 10, fill = "blue", color = "black") +
+  labs(
+    title = "Distribution of no. of Medicare recipients",
+    x = "No of Medicare recipients",
+    y = "Frequency"
+  ) +
+  theme(
+    plot.title = element_text(size = 8, hjust = 0.5),  # Adjust title size and position
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 9),  # Adjust x-axis label size
+    axis.title.y = element_text(size = 9),
+    plot.margin = margin(t = 30, r = 30, b = 30, l = 30)  # Increase plot margins
+  )
+
+
+plot3 <- ggplot(MetroHealth83, aes(x = SSINum)) +
+  geom_histogram(bins = 10, fill = "green", color = "black") +
+  labs(
+    title = "Distribution of Supplemental Security Income Recipients",
+    x = "No. of Supplemental Security Income Recipients",
+    y = "Frequency"
+  ) +
+  theme(
+    plot.title = element_text(size = 8, hjust = 0.5),  # Adjust title size and position
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 9),  # Adjust x-axis label size
+    axis.title.y = element_text(size = 9),
+    plot.margin = margin(t = 30, r = 30, b = 30, l = 30)  # Increase plot margins
+  ) 
+# Combine the plots into a single row using patchwork
+combined_plot <- plot1 + plot2 + plot3  # Combine plots
+combined_plot
+
+
+
+```
+Checking for assumption of final model
+
+```{r}
+# Linear regression model
+final_model <- lm(NumRetired ~ NumBeds + NumMedicare + SSINum, data = MetroHealth83)
+
+# 1. Linearity
+# Use scatterplots to check linearity between predictors and response
+ggplot(MetroHealth83, aes(x = NumBeds, y = NumRetired)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "Linearity Check - NumBeds vs. NumRetired")
+
+
+# 2. Homoscedasticity
+# Residuals vs. fitted plot to check for constant variance
+plot(final_model, which = 1)  # Residuals vs. Fitted plot
+
+# 4. Normality of residuals
+# Histogram and Q-Q plot of residuals
+hist(residuals(final_model), main = "Histogram of Residuals")
+plot(final_model, which = 2)  # Q-Q plot
+
+
+
+# 5. Multicollinearity
+# Variance Inflation Factor (VIF) to check for multicollinearity
+vif_values <- car::vif(final_model)
+print(vif_values)
+
+# 6. Outliers or high leverage points
+# Cook's distance and leverage plots
+plot(final_model, which = 4)  # Cook's distance
+plot(final_model, which = 5)  # Leverage vs. squared residuals plot
+
+# 7. Mean of residuals is zero
+mean_residual <- mean(residuals(final_model))
+print(mean_residual)  # This should be close to zero
+
+```
+
+#AIC, Log-Transformation, and SquareRoot  of Final Predictors
+```{r}
+#MLR Model testing
+MLR_model <- lm(NumRetired ~ NumBeds + NumMedicare + SSINum, data = MetroHealth83)
+summary(MLR_model)
+
+# Perform stepwise regression
+step_model1 <- step(MLR_model)
+
+# Summary of the stepwise regression model
+summary(step_model1)
+
+# Check AIC
+drop1(MLR_model, test="F")
+
+# Apply log transformation to selected variables in the stepwise regression model
+step_model_log1 <- lm(log(NumRetired) ~ log(NumBeds) + log(NumMedicare) +  log(SSINum), data = MetroHealth83)
+
+# Summary of the log-transformed model
+summary(step_model_log1)
+
+#plot for log reduced model
+par(mfrow=c(2,2))
+plot(step_model_log1)
+
+#Square Transformation
+sqmodel1 <- lm(sqrt(NumRetired) ~ NumBeds + NumMedicare+ SSINum, data = MetroHealth83)
+summary(sqmodel1)
+
+#plot for Square root reduced model
+par(mfrow=c(2,2))
+plot(sqmodel1)
+```
